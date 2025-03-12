@@ -219,8 +219,24 @@ HRESULT RenderClass::InitBufferShader()
     hr = m_pDevice->CreateBuffer(&vpBufferDesc, nullptr, &m_pVPBuffer);
     if (FAILED(hr)) return hr;
 
-    hr = DirectX::CreateDDSTextureFromFile(m_pDevice, L"cat.dds", nullptr, &m_pTextureView);
+    ID3D11Resource* pTexture = nullptr;
+    hr = CreateDDSTextureFromFileEx(m_pDevice, L"cat.dds", 0, D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, 0, DDS_LOADER_DEFAULT, &pTexture, &m_pTextureView);
     if (FAILED(hr)) return hr;
+
+    if (pTexture)
+    {
+        ID3D11Texture2D* pTexture2D = nullptr;
+        pTexture->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&pTexture2D);
+        if (pTexture2D)
+        {
+            m_pDeviceContext->GenerateMips(m_pTextureView);
+            pTexture2D->Release();
+        }
+        pTexture->Release();
+    }
+   
+
+
 
     D3D11_SAMPLER_DESC sampDesc = {};
     sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -230,6 +246,7 @@ HRESULT RenderClass::InitBufferShader()
     sampDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     sampDesc.MinLOD = 0;
     sampDesc.MaxLOD = D3D11_FLOAT32_MAX;
+    sampDesc.MaxAnisotropy = 16;
     hr = m_pDevice->CreateSamplerState(&sampDesc, &m_pSamplerState);
 
     return hr;
