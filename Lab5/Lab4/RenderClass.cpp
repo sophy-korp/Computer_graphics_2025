@@ -2,6 +2,7 @@
 #include "RenderClass.h"
 #include "DDSTextureLoader11.h"
 #include <filesystem>
+#include <wrl/client.h>
 
 #include <dxgi.h>
 #include <d3d11.h>
@@ -355,13 +356,9 @@ void RenderClass::Terminate()
 {
     TerminateBufferShader();
     TerminateSkybox();
+    TerminateParallelogram();
 
-    if (m_pDeviceContext)
-    {
-        m_pDeviceContext->ClearState();
-        m_pDeviceContext->Release();
-        m_pDeviceContext = nullptr;
-    }
+    
 
     if (m_pRenderTargetView)
     {
@@ -381,17 +378,25 @@ void RenderClass::Terminate()
         m_pSwapChain = nullptr;
     }
 
+    if (m_pColorBuffer)
+    {
+        m_pColorBuffer->Release();
+        m_pColorBuffer = nullptr;
+    }
+
+    if (m_pDeviceContext)
+    {
+        m_pDeviceContext->ClearState();
+        m_pDeviceContext->Release();
+        m_pDeviceContext = nullptr;
+    }
+
     if (m_pDevice)
     {
         m_pDevice->Release();
         m_pDevice = nullptr;
     }
 
-    if (m_pColorBuffer) 
-    {
-        m_pColorBuffer->Release();
-        m_pColorBuffer = nullptr;
-    }
 }
 
 void RenderClass::TerminateBufferShader()
@@ -800,7 +805,6 @@ void RenderClass::TerminateParallelogram() {
     if (m_pParallelogramPS) m_pParallelogramPS->Release();
     if (m_pParallelogramVS) m_pParallelogramVS->Release();
     if (m_pParallelogramLayout) m_pParallelogramLayout->Release();
-    if (m_pColorBuffer) m_pColorBuffer->Release();
     if (m_pBlendState) m_pBlendState->Release();
     if (m_pStateParallelogram) m_pStateParallelogram->Release();
 }
