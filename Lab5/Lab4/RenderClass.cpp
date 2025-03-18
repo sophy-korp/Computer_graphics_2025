@@ -2,7 +2,8 @@
 #include "RenderClass.h"
 #include "DDSTextureLoader11.h"
 #include <filesystem>
-#include <wrl/client.h>
+#include <vector>
+#include <algorithm>
 
 #include <dxgi.h>
 #include <d3d11.h>
@@ -912,6 +913,38 @@ void RenderClass::RenderCubes(XMMATRIX viewMatrix, XMMATRIX projectionMatrix) {
     m_pDeviceContext->DrawIndexed(36, 0, 0);
 }
 
+struct RenderObject {
+    XMMATRIX transform;
+    XMFLOAT4 color;
+    float minDepth; // минимальное расстояние до камеры
+};
+
+float ComputeMinDepth(const RenderObject& obj, XMVECTOR cameraPosition) {
+    XMFLOAT3 vertices[4];
+
+    XMMATRIX modelMatrix = obj.transform;
+
+    XMVECTOR localVertices[4] = {
+        XMVectorSet(-0.75f, -0.75f, 0.0f, 1.0f),
+        XMVectorSet(-0.75f,  0.75f, 0.0f, 1.0f),
+        XMVectorSet(0.75f,  0.75f, 0.0f, 1.0f),
+        XMVectorSet(0.75f, -0.75f, 0.0f, 1.0f),
+    };
+
+    float minDepth = FLT_MAX;
+
+    for (int i = 0; i < 4; ++i) {
+        XMVECTOR worldPos = XMVector3Transform(localVertices[i], modelMatrix);
+        XMVECTOR diff = worldPos - cameraPosition;
+        float distance = XMVectorGetX(XMVector3Length(diff));
+        if (distance < minDepth) {
+            minDepth = distance;
+        }
+    }
+
+    return minDepth;
+}
+
 void RenderClass::RenderParallelogram() {
     D3D11_RASTERIZER_DESC rasterDesc = {};
     rasterDesc.FillMode = D3D11_FILL_SOLID;
@@ -942,32 +975,23 @@ void RenderClass::RenderParallelogram() {
     static float rotationAngle = 0.0f;
     rotationAngle += 0.015f;
 
-    XMMATRIX transformMatrix1 = XMMatrixTranslation(sinf(rotationAngle) * 2.0f, 1.0f, -2.0f);
-    XMMATRIX transposedMatrix1 = XMMatrixTranspose(transformMatrix1);
-    XMFLOAT4 color1 = { 0.2f, 0.0f, 0.7f, 0.5f };
-
-    XMMATRIX transformMatrix2 = XMMatrixTranslation(-sinf(rotationAngle) * 2.0f, 1.0f, -3.0f);
-    XMMATRIX transposedMatrix2 = XMMatrixTranspose(transformMatrix2);
-    XMFLOAT4 color2 = { 0.7f, 0.0f, 0.5f, 0.5f };
-
-    XMFLOAT3 position1, position2;
-    XMStoreFloat3(&position1, transformMatrix1.r[3]);
-    XMStoreFloat3(&position2, transformMatrix2.r[3]);
+    std::vector<RenderObject> parallelograms = {
+        { XMMatrixTranslation(sinf(rotationAngle) * 2.0f, 1.0f, -2.0f), { 0.2f, 0.0f, 0.7f, 0.5f } },
+        { XMMatrixTranslation(-sinf(rotationAngle) * 2.0f, 1.0f, -3.0f), { 0.7f, 0.0f, 0.5f, 0.5f } }
+    };
 
     XMVECTOR cameraPosition = XMLoadFloat3(&m_CameraPosition);
-    XMVECTOR objectPosition1 = XMLoadFloat3(&position1);
-    XMVECTOR objectPosition2 = XMLoadFloat3(&position2);
 
-    float distanceToObject1 = XMVectorGetX(XMVector3Length(XMVectorSubtract(objectPosition1, cameraPosition)));
-    float distanceToObject2 = XMVectorGetX(XMVector3Length(XMVectorSubtract(objectPosition2, cameraPosition)));
-
-    if (distanceToObject1 >= distanceToObject2) {
-        DrawParallelogram(transposedMatrix1, color1);
-        DrawParallelogram(transposedMatrix2, color2);
+    for (auto& obj : parallelograms) {
+        obj.minDepth = ComputeMinDepth(obj, cameraPosition);
     }
-    else {
-        DrawParallelogram(transposedMatrix2, color2);
-        DrawParallelogram(transposedMatrix1, color1);
+
+    std::sort(parallelograms.begin(), parallelograms.end(), [](const RenderObject& a, const RenderObject& b) {
+        return a.minDepth > b.minDepth;
+        });
+
+    for (const auto& obj : parallelograms) {
+        DrawParallelogram(XMMatrixTranspose(obj.transform), obj.color);
     }
 
     rasterState->Release();
