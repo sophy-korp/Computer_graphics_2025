@@ -1,56 +1,48 @@
-cbuffer FrustumPlanes : register(b0)
-{
-    float4 frustumPlanes[6];
-}
-;
+cbuffer FrustumPlanes : register(b0) 
+{ 
+    float4 planes[6]; 
+};
 
 struct InstanceData
 {
-    float4x4 modelMatrix;
-    uint textureIndex;
-    uint totalInstances;
-    float2 padding; // выравнивание
+    float4x4 model; 
+    uint texInd; 
+    uint countInstance; 
+    float2 padding; // Выравнивание
 };
 
-StructuredBuffer<InstanceData> instanceBuffer : register(t0);
-RWByteAddressBuffer argsBuffer     : register(u0);
-RWStructuredBuffer<uint> visibleIds     : register(u1);
+StructuredBuffer<InstanceData> instanceData : register(t0); 
+RWByteAddressBuffer indirectArgs : register(u0); 
+RWStructuredBuffer<uint> objectIds : register(u1);
 
-bool IsVisible(in float3 aabbCenter, in float halfExtent)
-{
-    // Проверяем пересечение AABB с каждым из 6 фрустум-плоскостей
-    [unroll]
-    for (int planeIdx = 0; planeIdx < 6; ++planeIdx)
-    {
-        float distance = dot(frustumPlanes[planeIdx].xyz, aabbCenter) + frustumPlanes[planeIdx].w;
-        float radius = halfExtent * (abs(frustumPlanes[planeIdx].x) + abs(frustumPlanes[planeIdx].y) + abs(frustumPlanes[planeIdx].z));
-
-        if ((distance + radius) < 0)
-        {
-            return false;
-        }
-    }
-    return true;
+bool IsAABBInFrustum(in float3 center, in float size)
+{ 
+  // Для каждой из 6 плоскостей определяем расстояние до центра AABB // и вычисляем проекцию полупериметра (радиус) AABB на нормаль плоскости. 
+  // Если суммарное расстояние оказывается меньше нуля, объект вне фрустума.
+  for (int i = 0; i < 6; i++) { 
+        float d = dot(planes[i].xyz, center) + planes[i].w; 
+        float r = size * (abs(planes[i].x) + abs(planes[i].y) + abs(planes[i].z)); 
+        if (d + r < 0.0f) { 
+            return false; 
+        } 
+    } 
+    return true; 
 }
 
 [numthreads(64, 1, 1)]
-void main(uint3 dispatchId : SV_DispatchThreadID)
+void main(uint3 threadID : SV_DispatchThreadID)
 {
-    uint instanceId = dispatchId.x;
+    if (threadID.x >= instanceData[0].countInstance)
+        return;
 
-if (instanceId >= instanceBuffer[0].totalInstances)
-    return;
+    float3 pos = instanceData[threadID.x].model._m03_m13_m23;
 
-// Получаем центр AABB как позицию из матрицы модели
-float3 centerPosition = instanceBuffer[instanceId].modelMatrix[3].xyz;
+    float size = 0.5f * 0.95f;
 
-// Размер AABB (предположительно куб с масштабом)
-const float boxExtent = 0.475f;
-
-if (IsVisible(centerPosition, boxExtent))
-{
-    uint visibleIndex;
-    argsBuffer.InterlockedAdd(4, 1, visibleIndex);
-    visibleIds[visibleIndex] = instanceId;
-}
+    if (IsAABBInFrustum(pos, size)) 
+    {
+        uint index;
+        indirectArgs.InterlockedAdd(4, 1, index);
+        objectIds[index] = threadID.x;
+    }
 }
